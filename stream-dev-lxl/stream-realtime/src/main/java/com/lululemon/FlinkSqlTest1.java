@@ -1,11 +1,11 @@
-package lululemon;
+package com.stream.realtime.lululemon;
 
 import com.stream.core.utils.EnvironmentSettingUtils;
 import lombok.SneakyThrows;
-import org.apache.flink.runtime.state.hashmap.HashMapStateBackend;
 import org.apache.flink.streaming.api.CheckpointingMode;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
+import org.apache.flink.runtime.state.hashmap.HashMapStateBackend;
 
 import java.time.ZoneId;
 
@@ -46,176 +46,136 @@ public class FlinkSqlTest1 {
         }
 
         String source_kafka_order_info_ddl =
-                "CREATE TABLE IF NOT EXISTS t_kafka_oms_order_info (\n" +
-                        "    id                         STRING,     \n" +
-                        "    order_id                   STRING,     \n" +
-                        "    user_id                    STRING,     \n" +
-                        "    user_name                  STRING,     \n" +
-                        "    phone_number               STRING,     \n" +
-                        "    product_link               STRING,     \n" +
-                        "    product_id                 STRING,     \n" +
-                        "    color                      STRING,     \n" +
-                        "    size                       STRING,     \n" +
-                        "    item_id                    STRING,     \n" +
-                        "    material                   STRING,     \n" +
-                        "    sale_num                   STRING,     \n" +
-                        "    sale_amount                STRING,     \n" +
-                        "    total_amount               STRING,     \n" +
-                        "    product_name               STRING,     \n" +
-                        "    is_online_sales            STRING,     \n" +
-                        "    shipping_address           STRING,     \n" +
-                        "    recommendations_product_ids STRING,     \n" +
-                        "    ds                         STRING,     \n" +
-                        "    ts                         BIGINT,     \n" +
-                        "    ts_ms AS CASE                          \n" +
-                        "        WHEN ts < 100000000000 THEN to_timestamp_ltz(ts * 1000, 3)        \n" +
-                        "        ELSE to_timestamp_ltz(ts, 3)                                      \n" +
-                        "    END,                                                                  \n" +
-                        "    insert_time                STRING,                                    \n" +
-                        "    op                         STRING,                                    \n" +
-                        "    WATERMARK FOR ts_ms AS ts_ms - INTERVAL '5' SECOND                    \n" +
-                        ")                                                                         \n" +
-                        "WITH (                                                                    \n" +
-                        "    'connector'                      = 'kafka',                           \n" +
-                        "    'topic'                          = 'realtime_v3_order_info',          \n" +
-                        "    'properties.bootstrap.servers'   = 'cdh01:9092,cdh02:9092,cdh03:9092',\n" +
-                        "    'properties.group.id'            = 'order-analysis1',                 \n" +
-                        "    'scan.startup.mode'              = 'earliest-offset',                 \n" +
-                        "    'format'                         = 'json',                            \n" +
-                        "    'json.fail-on-missing-field'     = 'false',                           \n" +
-                        "    'json.ignore-parse-errors'       = 'true'                             \n" +
+                "CREATE TABLE IF NOT EXISTS t_kafka_oms_order_info (                                                                                  \n" +
+                        "    id                         STRING,                                                                                       \n" +
+                        "    order_id                   STRING,                                                                                       \n" +
+                        "    user_id                    STRING,                                                                                       \n" +
+                        "    user_name                  STRING,                                                                                       \n" +
+                        "    phone_number               STRING,                                                                                       \n" +
+                        "    product_link               STRING,                                                                                       \n" +
+                        "    product_id                 STRING,                                                                                       \n" +
+                        "    color                      STRING,                                                                                       \n" +
+                        "    size                       STRING,                                                                                       \n" +
+                        "    item_id                    STRING,                                                                                       \n" +
+                        "    material                   STRING,                                                                                       \n" +
+                        "    sale_num                   STRING,                                                                                       \n" +
+                        "    sale_amount                STRING,                                                                                       \n" +
+                        "    total_amount               STRING,                                                                                       \n" +
+                        "    product_name               STRING,                                                                                       \n" +
+                        "    is_online_sales            STRING,                                                                                       \n" +
+                        "    shipping_address           STRING,                                                                                       \n" +
+                        "    recommendations_product_ids STRING,                                                                                       \n" +
+                        "    ds                         STRING,                                                                                       \n" +
+                        "    ts                         BIGINT,                                                                                       \n" +
+                        "    ts_ms AS CASE                                                                                                            \n" +
+                        "        WHEN ts < 100000000000 THEN to_timestamp_ltz(ts * 1000, 3)                                                                 \n" +
+                        "        ELSE to_timestamp_ltz(ts, 3)                                                                                               \n" +
+                        "    END,                                                                                                                           \n" +
+                        "    insert_time                STRING,                                                                                             \n" +
+                        "    op                         STRING,                                                                                             \n" +
+                        "    WATERMARK FOR ts_ms AS ts_ms - INTERVAL '5' SECOND                                                                             \n" +
+                        ")                                                                                                                                  \n" +
+                        "WITH (                                                                                                                             \n" +
+                        "    'connector'                      = 'kafka',                                                                                    \n" +
+                        "    'topic'                          = 'realtime_v3_order_info',                                                                   \n" +
+                        "    'properties.bootstrap.servers'   = 'cdh01:9092,cdh02:9092,cdh03:9092',                                                         \n" +
+                        "    'properties.group.id'            = 'order-analysis1',                                                                          \n" +
+                        "    'scan.startup.mode'              = 'earliest-offset',                                                                          \n" +
+                        "    'format'                         = 'json',                                                                                     \n" +
+                        "    'json.fail-on-missing-field'     = 'false',                                                                                    \n" +
+                        "    'json.ignore-parse-errors'       = 'true'                                                                                      \n" +
                         ")";
 
         tenv.executeSql(source_kafka_order_info_ddl);
-        System.out.println("源表创建成功");
 
-        /*tenv.executeSql("SELECT \n" +
-                "    window_start,\n" +
-                "    window_end,\n" +
-                "    SUM(TRY_CAST(total_amount AS DECIMAL(10,2))) as window_sum\n" +
-                "FROM TABLE(\n" +
-                "    TUMBLE(TABLE t_kafka_oms_order_info, DESCRIPTOR(ts_ms), INTERVAL '10' seconds)\n" +
-                ")\n" +
-                "WHERE CAST(ts_ms AS DATE) = DATE '2025-10-27'\n" +
-                "  AND total_amount IS NOT NULL \n" +
-                "  AND total_amount <> ''\n" +
-                "GROUP BY window_start, window_end").print();*/
-       // TODO: 2025/10/28  窗口累计金额
+        // TODO: 2025/10/28  1.滚动窗口统计累计销售额
 
-     tenv.executeSql("SELECT \n" +
-                "    window_start,\n" +
-                "    window_end,\n" +
-                "    SUM(TRY_CAST(total_amount AS DECIMAL(10,2))) as total_cumulative_amount\n" +
-                "FROM TABLE(\n" +
-                "    CUMULATE(TABLE t_kafka_oms_order_info, DESCRIPTOR(ts_ms), INTERVAL '10' seconds, INTERVAL '1' day)\n" +
-                ")\n" +
-                "WHERE CAST(ts_ms AS DATE) = DATE '2025-10-27'\n" +
-                "  AND total_amount IS NOT NULL \n" +
-                "  AND total_amount <> ''\n" +
-                "GROUP BY window_start, window_end").print();
+        tenv.executeSql(buildCumulativeSalesSql1("10", "SECONDS", "2025-10-27")).print();
 
+        // TODO: 2025/10/28  2.统计每个窗口内销量Top5的商品ID
 
-        // TODO: 2025/10/28 1.窗口累计金额
+        tenv.executeSql(buildTop5Sql("5", "MINUTES")).print();
 
+        // TODO: 2025/10/28 3.按累积窗口统计销售额，并展示每个窗口内的累计计算过程
 
-        tenv.executeSql("WITH CumulativeSales AS (                                                                       \n" +
-                "    SELECT                                                                                                \n" +
-                "        window_start,                                                                                     \n" +
-                "        window_end,                                                                                       \n" +
-                "        SUM(TRY_CAST(total_amount AS DECIMAL(10,2))) as sale_total_amount                                 \n" +
-                "    FROM TABLE(                                                                                           \n" +
-                "        CUMULATE(TABLE t_kafka_oms_order_info, DESCRIPTOR(ts_ms), INTERVAL '10' seconds, INTERVAL '1' day)\n" +
-                "    )                                                                                                     \n" +
-                "    WHERE CAST(ts_ms AS DATE) = DATE '2025-10-27'                                                         \n" +
-                "      AND total_amount IS NOT NULL                                                                        \n" +
-                "      AND total_amount <> ''                                                                              \n" +
-                "    GROUP BY window_start, window_end                                                                     \n" +
-                ")                                                                                                         \n" +
-                "SELECT                                                                                                    \n" +
-                "    window_start,                                                                                         \n" +
-                "    window_end,                                                                                           \n" +
-                "    sale_total_amount                                                                                     \n" +
-                "FROM CumulativeSales").print();
-
-
-        // TODO: 2025/10/28  2.窗口销量top3
-
-        String top5PerWindowSql = "SELECT                                                   \n" +
-                "    window_start,                                                          \n" +
-                "    window_end,                                                            \n" +
-                "    CONCAT(                                                                \n" +
-                "        MAX(CASE WHEN rank_num = 1 THEN id ELSE '' END), ',',              \n" +
-                "        MAX(CASE WHEN rank_num = 2 THEN id ELSE '' END), ',',              \n" +
-                "        MAX(CASE WHEN rank_num = 3 THEN id ELSE '' END), ',',              \n" +
-                "        MAX(CASE WHEN rank_num = 4 THEN id ELSE '' END), ',',              \n" +
-                "        MAX(CASE WHEN rank_num = 5 THEN id ELSE '' END)                    \n" +
-                "    ) as top5_ids                                                          \n" +
-                "FROM (                                                                     \n" +
-                "    SELECT                                                                 \n" +
-                "        window_start,                                                      \n" +
-                "        window_end,                                                        \n" +
-                "        id,                                                                \n" +
-                "        SUM(TRY_CAST(sale_num AS INT)) as total_sale_num,                  \n" +
-                "        ROW_NUMBER() OVER (                                                \n" +
-                "            PARTITION BY window_start, window_end                          \n" +
-                "            ORDER BY SUM(TRY_CAST(sale_num AS INT)) DESC                   \n" +
-                "        ) as rank_num                                                      \n" +
-                "    FROM TABLE(                                                            \n" +
-                "        TUMBLE(TABLE t_kafka_oms_order_info, DESCRIPTOR(ts_ms), INTERVAL '10' Minutes)\n" +
-                "    )                                                                      \n" +
-                "    WHERE CAST(ts_ms AS DATE) = DATE '2025-10-27'                          \n" +
-                "      AND sale_num IS NOT NULL                                             \n" +
-                "      AND sale_num <> ''                                                   \n" +
-                "      AND id IS NOT NULL                                                   \n" +
-                "      AND id <> ''                                                         \n" +
-                "    GROUP BY window_start, window_end, id                                  \n" +
-                ")                                                                          \n" +
-                "WHERE rank_num <= 5                                                        \n" +
-                "GROUP BY window_start, window_end";
-
-        String cumulativeSalesSql = "SELECT                                                 \n" +
-                "    window_start,                                                          \n" +
-                "    window_end,                                                            \n" +
-                "    SUM(TRY_CAST(total_amount AS DECIMAL(10,2))) as total_cumulative_amount\n" +
-                "FROM TABLE(                                                                \n" +
-                "    CUMULATE(TABLE t_kafka_oms_order_info, DESCRIPTOR(ts_ms),              \n" +
-                "    INTERVAL '10' Minutes,                                                 \n" +
-                "    INTERVAL '1' day)                                                      \n" +
-                ")                                                                          \n" +
-                "WHERE CAST(ts_ms AS DATE) = DATE '2025-10-27'                              \n" +
-                "  AND total_amount IS NOT NULL                                             \n" +
-                "  AND total_amount <> ''                                                   \n" +
-                "GROUP BY window_start, window_end";
-
-        tenv.executeSql(top5PerWindowSql).print();
-        tenv.executeSql(cumulativeSalesSql).print();
-
-
-
-
-        // TODO: 2025/10/28 3.销售金额累加过程
-
-
-        String simpleCumulativeSalesSql =
-                "SELECT                                                                             \n" +
-                        "    window_start,                                                                  \n" +
-                        "    window_end,                                                                    \n" +
-                        "    SUM(TRY_CAST(total_amount AS DECIMAL(10,2))) as period_amount,                 \n" +
-                        "    LISTAGG(                                                                       \n" +
-                        "        id || '(' || CAST(TRY_CAST(total_amount AS DECIMAL(10,2)) AS VARCHAR) || ')', \n" +
-                        "        '+'                                                                        \n" +
-                        "    ) as cumulative_process                                                        \n" +
-                        "FROM TABLE(                                                                        \n" +
-                        "    CUMULATE(TABLE t_kafka_oms_order_info, DESCRIPTOR(ts_ms),                      \n" +
-                        "        INTERVAL '10' MINUTES,                                                     \n" +
-                        "        INTERVAL '1' DAY)                                                          \n" +
-                        ")                                                                                  \n" +
-                        "WHERE CAST(ts_ms AS DATE) = DATE '2025-10-27'                                      \n" +
-                        "  AND total_amount IS NOT NULL                                                     \n" +
-                        "  AND total_amount <> ''                                                           \n" +
-                        "GROUP BY window_start, window_end";
-        tenv.executeSql(simpleCumulativeSalesSql).print();
+        tenv.executeSql(buildCumulativeSalesSql("10", "MINUTES", "2025-10-27")).print();
 
         env.execute();
     }
+
+
+    public static String buildCumulativeSalesSql1(String stepInterval, String stepUnit, String targetDate) {
+        return "SELECT                                                                                                                                  \n" +
+                "    window_start,                                                                                                                      \n" +
+                "    window_end,                                                                                                                        \n" +
+                "    SUM(TRY_CAST(total_amount AS DECIMAL(10,2))) as total_cumulative_amount                                                            \n" +
+                "FROM TABLE(                                                                                                                            \n" +
+                "    CUMULATE(TABLE t_kafka_oms_order_info, DESCRIPTOR(ts_ms),                                                                          \n" +
+                "        INTERVAL '" + stepInterval + "' " + stepUnit + ",                                                                              \n" +
+                "        INTERVAL '1' DAY)                                                                                                              \n" +
+                ")                                                                                                                                      \n" +
+                "WHERE CAST(ts_ms AS DATE) = DATE '" + targetDate + "'                                                                                  \n" +
+                "  AND total_amount IS NOT NULL                                                                                                         \n" +
+                "  AND total_amount <> ''                                                                                                               \n" +
+                "GROUP BY window_start, window_end";
+    }
+
+    public static String buildTop5Sql(String windowInterval, String windowUnit) {
+        return "SELECT                                                                                                                                  \n" +
+                "    window_start,                                                                                                                      \n" +
+                "    window_end,                                                                                                                        \n" +
+                "    CONCAT(                                                                                                                            \n" +
+                "        MAX(CASE WHEN rank_num = 1 THEN id ELSE '' END), ',',                                                                          \n" +
+                "        MAX(CASE WHEN rank_num = 2 THEN id ELSE '' END), ',',                                                                          \n" +
+                "        MAX(CASE WHEN rank_num = 3 THEN id ELSE '' END), ',',                                                                          \n" +
+                "        MAX(CASE WHEN rank_num = 4 THEN id ELSE '' END), ',',                                                                          \n" +
+                "        MAX(CASE WHEN rank_num = 5 THEN id ELSE '' END)                                                                                \n" +
+                "    ) as top5_ids                                                                                                                      \n" +
+                "FROM (                                                                                                                                 \n" +
+                "    SELECT                                                                                                                             \n" +
+                "        window_start,                                                                                                                  \n" +
+                "        window_end,                                                                                                                    \n" +
+                "        id,                                                                                                                            \n" +
+                "        SUM(TRY_CAST(sale_num AS INT)) as total_sale_num,                                                                              \n" +
+                "        ROW_NUMBER() OVER (                                                                                                            \n" +
+                "            PARTITION BY window_start, window_end                                                                                      \n" +
+                "            ORDER BY SUM(TRY_CAST(sale_num AS INT)) DESC                                                                               \n" +
+                "        ) as rank_num                                                                                                                  \n" +
+                "    FROM TABLE(                                                                                                                        \n" +
+                "        TUMBLE(TABLE t_kafka_oms_order_info, DESCRIPTOR(ts_ms), INTERVAL '" + windowInterval + "' " + windowUnit + ")                  \n" +
+                "    )                                                                                                                                  \n" +
+                "    WHERE CAST(ts_ms AS DATE) = DATE '2025-10-27'                                                                                      \n" +
+                "      AND sale_num IS NOT NULL                                                                                                         \n" +
+                "      AND sale_num <> ''                                                                                                               \n" +
+                "      AND id IS NOT NULL                                                                                                               \n" +
+                "      AND id <> ''                                                                                                                     \n" +
+                "    GROUP BY window_start, window_end, id                                                                                              \n" +
+                ")                                                                                                                                      \n" +
+                "WHERE rank_num <= 5                                                                                                                    \n" +
+                "GROUP BY window_start, window_end";
+    };
+
+
+    public static String buildCumulativeSalesSql(String windowInterval, String windowUnit, String targetDate) {
+        return "SELECT                                                                                                                                  \n" +
+                "    window_start,                                                                                                                      \n" +
+                "    window_end,                                                                                                                        \n" +
+                "    SUM(TRY_CAST(total_amount AS DECIMAL(10,2))) as period_amount,                                                                     \n" +
+                "    LISTAGG(                                                                                                                           \n" +
+                "        id || '(' || CAST(TRY_CAST(total_amount AS DECIMAL(10,2)) AS VARCHAR) || ')',                                                  \n" +
+                "        '+'                                                                                                                            \n" +
+                "    ) as cumulative_process                                                                                                            \n" +
+                "FROM TABLE(                                                                                                                            \n" +
+                "    CUMULATE(TABLE t_kafka_oms_order_info, DESCRIPTOR(ts_ms),                                                                          \n" +
+                "        INTERVAL '" + windowInterval + "' " + windowUnit + ",                                                                          \n" +
+                "        INTERVAL '1' DAY)                                                                                                              \n" +
+                ")                                                                                                                                      \n" +
+                "WHERE CAST(ts_ms AS DATE) = DATE '" + targetDate + "'                                                                                  \n" +
+                "  AND total_amount IS NOT NULL                                                                                                         \n" +
+                "  AND total_amount <> ''                                                                                                               \n" +
+                "GROUP BY window_start, window_end";
+    }
+
+
+
 }
