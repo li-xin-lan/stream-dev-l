@@ -1,5 +1,6 @@
 package lululemon;
 
+
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -10,17 +11,12 @@ import com.stream.core.utils.KafkaUtils;
 import lombok.SneakyThrows;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.functions.FlatMapFunction;
-import org.apache.flink.api.common.functions.MapFunction;
-import org.apache.flink.api.common.state.ValueState;
-import org.apache.flink.api.common.state.ValueStateDescriptor;
-import org.apache.flink.api.java.tuple.Tuple2;
-import org.apache.flink.api.java.tuple.Tuple3;
-import org.apache.flink.api.java.functions.KeySelector;
-import org.apache.flink.api.common.state.ListState;
-import org.apache.flink.api.common.state.ListStateDescriptor;
 import org.apache.flink.api.common.typeinfo.TypeHint;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
+import org.apache.flink.api.java.functions.KeySelector;
+import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.connector.jdbc.JdbcConnectionOptions;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.source.enumerator.initializer.OffsetsInitializer;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -28,15 +24,11 @@ import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.KeyedProcessFunction;
 import org.apache.flink.util.Collector;
-import org.lionsoul.ip2region.xdb.Searcher;
 
-import java.io.File;
-import java.time.Instant;
+import java.text.SimpleDateFormat;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * @Author: lxl
@@ -54,6 +46,8 @@ public class HistoryTodayPv {
         public String log_type;
         public String formatted_time;
     }
+
+
     // 2️⃣ POJO：聚合结果
     public static class UserProfile {
         public String user_id;
@@ -65,16 +59,146 @@ public class HistoryTodayPv {
         public long update_time;
 
         public UserProfile() {}
-    // 2️⃣ POJO：聚合结果
-    /*public static class UserProfile {
-        public String user_id;
-        public Set<String> login_days;
-        public boolean has_purchase;
-        public boolean has_search;
-        public boolean has_view;
-        public Set<String> login_periods;
 
-        public UserProfile() {}*/
+
+    static boolean isChinaRegion(String region) {
+        if (region == null || region.isEmpty()) {
+            return false;
+        }
+
+        // 方式1：检查是否包含"中国"关键字
+        if (region.contains("中国")) {
+            return true;
+        }
+
+        // 方式2：检查具体的中国省份和直辖市
+        String[] chinaProvinces = {
+                "北京市", "天津市", "上海市", "重庆市",
+                "河北省", "山西省", "辽宁省", "吉林省", "黑龙江省",
+                "江苏省", "浙江省", "安徽省", "福建省", "江西省", "山东省",
+                "河南省", "湖北省", "湖南省", "广东省", "海南省",
+                "四川省", "贵州省", "云南省", "陕西省", "甘肃省",
+                "青海省", "台湾省", "内蒙古自治区", "广西壮族自治区",
+                "西藏自治区", "宁夏回族自治区", "新疆维吾尔自治区",
+                "香港", "澳门"
+        };
+
+        for (String province : chinaProvinces) {
+            if (region.contains(province)) {
+                return true;
+            }
+        }
+
+
+        // 方式3：检查地区格式（中国 省份 城市）
+        if (region.matches("中国\\s+.*")) {
+            return true;
+        }
+
+        return false;
+    }
+
+        static String extractProvince(String region) {
+            if (region == null || region.isEmpty()) {
+                return "";
+            }
+
+            // 移除"中国"前缀
+            String cleanedRegion = region.replace("中国", "").trim();
+
+            // 省份完整名称映射
+            Map<String, String> provinceFullMapping = new HashMap<>();
+            provinceFullMapping.put("北京市", "北京市");
+            provinceFullMapping.put("天津市", "天津市");
+            provinceFullMapping.put("上海市", "上海市");
+            provinceFullMapping.put("重庆市", "重庆市");
+            provinceFullMapping.put("河北省", "河北省");
+            provinceFullMapping.put("山西省", "山西省");
+            provinceFullMapping.put("辽宁省", "辽宁省");
+            provinceFullMapping.put("吉林省", "吉林省");
+            provinceFullMapping.put("黑龙江省", "黑龙江省");
+            provinceFullMapping.put("江苏省", "江苏省");
+            provinceFullMapping.put("浙江省", "浙江省");
+            provinceFullMapping.put("安徽省", "安徽省");
+            provinceFullMapping.put("福建省", "福建省");
+            provinceFullMapping.put("江西省", "江西省");
+            provinceFullMapping.put("山东省", "山东省");
+            provinceFullMapping.put("河南省", "河南省");
+            provinceFullMapping.put("湖北省", "湖北省");
+            provinceFullMapping.put("湖南省", "湖南省");
+            provinceFullMapping.put("广东省", "广东省");
+            provinceFullMapping.put("海南省", "海南省");
+            provinceFullMapping.put("四川省", "四川省");
+            provinceFullMapping.put("贵州省", "贵州省");
+            provinceFullMapping.put("云南省", "云南省");
+            provinceFullMapping.put("陕西省", "陕西省");
+            provinceFullMapping.put("甘肃省", "甘肃省");
+            provinceFullMapping.put("青海省", "青海省");
+            provinceFullMapping.put("台湾省", "台湾省");
+            provinceFullMapping.put("内蒙古自治区", "内蒙古自治区");
+            provinceFullMapping.put("广西壮族自治区", "广西壮族自治区");
+            provinceFullMapping.put("西藏自治区", "西藏自治区");
+            provinceFullMapping.put("宁夏回族自治区", "宁夏回族自治区");
+            provinceFullMapping.put("新疆维吾尔自治区", "新疆维吾尔自治区");
+            provinceFullMapping.put("香港特别行政区", "香港");
+            provinceFullMapping.put("澳门特别行政区", "澳门");
+
+            // 简写映射
+            Map<String, String> provinceShortMapping = new HashMap<>();
+            provinceShortMapping.put("北京", "北京市");
+            provinceShortMapping.put("天津", "天津市");
+            provinceShortMapping.put("上海", "上海市");
+            provinceShortMapping.put("重庆", "重庆市");
+            provinceShortMapping.put("河北", "河北省");
+            provinceShortMapping.put("山西", "山西省");
+            provinceShortMapping.put("辽宁", "辽宁省");
+            provinceShortMapping.put("吉林", "吉林省");
+            provinceShortMapping.put("黑龙江", "黑龙江省");
+            provinceShortMapping.put("江苏", "江苏省");
+            provinceShortMapping.put("浙江", "浙江省");
+            provinceShortMapping.put("安徽", "安徽省");
+            provinceShortMapping.put("福建", "福建省");
+            provinceShortMapping.put("江西", "江西省");
+            provinceShortMapping.put("山东", "山东省");
+            provinceShortMapping.put("河南", "河南省");
+            provinceShortMapping.put("湖北", "湖北省");
+            provinceShortMapping.put("湖南", "湖南省");
+            provinceShortMapping.put("广东", "广东省");
+            provinceShortMapping.put("海南", "海南省");
+            provinceShortMapping.put("四川", "四川省");
+            provinceShortMapping.put("贵州", "贵州省");
+            provinceShortMapping.put("云南", "云南省");
+            provinceShortMapping.put("陕西", "陕西省");
+            provinceShortMapping.put("甘肃", "甘肃省");
+            provinceShortMapping.put("青海", "青海省");
+            provinceShortMapping.put("台湾", "台湾省");
+            provinceShortMapping.put("内蒙古", "内蒙古自治区");
+            provinceShortMapping.put("广西", "广西壮族自治区");
+            provinceShortMapping.put("西藏", "西藏自治区");
+            provinceShortMapping.put("宁夏", "宁夏回族自治区");
+            provinceShortMapping.put("新疆", "新疆维吾尔自治区");
+            provinceShortMapping.put("香港", "香港");
+            provinceShortMapping.put("澳门", "澳门");
+
+            // 先检查完整名称
+            for (Map.Entry<String, String> entry : provinceFullMapping.entrySet()) {
+                if (cleanedRegion.contains(entry.getKey())) {
+                    return entry.getValue();
+                }
+            }
+
+            // 再检查简写
+            for (Map.Entry<String, String> entry : provinceShortMapping.entrySet()) {
+                if (cleanedRegion.contains(entry.getKey())) {
+                    return entry.getValue();
+                }
+            }
+
+            return "";
+        }
+        // ============ 省份提取方法结束 ============
+
+
 
         public UserProfile(String userId, Set<String> days, boolean hasPurchase, boolean hasSearch, boolean hasView, Set<String> periods) {
             this.user_id = userId;
@@ -88,14 +212,30 @@ public class HistoryTodayPv {
         public String toJsonString() {
             JSONObject json = new JSONObject();
             json.put("user_id", user_id);
-            json.put("login_days", new ArrayList<>(login_days));
-            json.put("has_purchase", has_purchase);
-            json.put("has_search", has_search);
-            json.put("has_view", has_view);
-            json.put("login_periods", new ArrayList<>(login_periods));
-            json.put("update_time", update_time);
+
+            // 将集合转换为逗号分隔的字符串
+            json.put("login_dates", String.join(",", login_days));
             json.put("login_days_count", login_days.size());
-            json.put("login_periods_count", login_periods.size());
+            json.put("login_periods", String.join(",", login_periods));
+            json.put("has_purchase", String.valueOf(has_purchase));
+            json.put("has_search", String.valueOf(has_search));
+            json.put("has_view", String.valueOf(has_view));
+
+            // 计算首次和最后登录日期
+            if (!login_days.isEmpty()) {
+                List<String> sortedDays = new ArrayList<>(login_days);
+                Collections.sort(sortedDays);
+                json.put("first_login_date", sortedDays.get(0));
+                json.put("last_login_date", sortedDays.get(sortedDays.size() - 1));
+            } else {
+                json.put("first_login_date", "");
+                json.put("last_login_date", "");
+            }
+
+            // 格式化更新时间
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            json.put("update_time", sdf.format(new Date(update_time)));
+
             return json.toJSONString();
         }
     }
@@ -117,7 +257,7 @@ public class HistoryTodayPv {
         // 设置缓冲区超时时间
         env.setBufferTimeout(100);  // 100ms
         // 使用配置对象设置内存参数
-        org.apache.flink.configuration.Configuration config = new org.apache.flink.configuration.Configuration();
+        Configuration config = new Configuration();
         // 设置网络缓冲区数量（直接设置数量而不是大小）
         config.setInteger("taskmanager.network.memory.buffers-per-channel", 2);
         config.setInteger("taskmanager.network.memory.floating-buffers-per-gate", 8);
@@ -181,14 +321,40 @@ public class HistoryTodayPv {
                 .sum(2)
                 .name("DailyPagePV");
 
-        dailyPagePv.map((MapFunction<Tuple3<String, String, Long>, String>) value -> {
-            String currentTime = LocalDateTime.now().format(TIME_FORMATTER);
-            return String.format("[%s] 日统计 | 日期: %s | 页面: %-15s | 访问量: %6d",
-                    currentTime, value.f0, value.f1, value.f2);
-        }).print("页面访问量");*/
+        dailyPagePv.print();*/
 
+        // ==================== 页面访问量统计写入 Doris ====================
+        /*JdbcConnectionOptions pagePvJdbcOptions = new JdbcConnectionOptions.JdbcConnectionOptionsBuilder()
+                .withUrl("jdbc:mysql://172.22.78.0:9030/bigdata_realtime_lululemon_user_portrait")
+                .withDriverName("com.mysql.cj.jdbc.Driver")
+                .withUsername("root")
+                .withPassword("123456")
+                .build();
+
+// 创建页面访问量统计的 JDBC Sink
+        SinkFunction<Tuple3<String, String, Long>> pagePvSink = JdbcSink.sink(
+                "INSERT INTO page_pv_statistics(stat_date, page_type, pv_count, update_time) " +
+                        "VALUES (?, ?, ?, ?)",
+                (statement, tuple) -> {
+                    try {
+                        statement.setString(1, tuple.f0); // stat_date
+                        statement.setString(2, tuple.f1); // page_type
+                        statement.setLong(3, tuple.f2);   // pv_count
+                        statement.setString(4, LocalDateTime.now().format(TIME_FORMATTER)); // update_time
+                    } catch (Exception e) {
+                        System.err.println("页面访问量数据写入错误: " + tuple);
+                        e.printStackTrace();
+                    }
+                },
+                pagePvJdbcOptions);
+
+// 添加页面访问量统计 Sink
+        dailyPagePv.addSink(pagePvSink)
+                .name("JdbcSink-PagePV")
+                .setParallelism(1);*/
 
 // TODO: 2025/11/3 需求2 搜索词 TOP10
+
 
 
         /*DataStream<Tuple2<String, Long>> keywordStream = kafkaStream
@@ -207,65 +373,14 @@ public class HistoryTodayPv {
                 })
                 .returns(TypeInformation.of(new TypeHint<Tuple2<String, Long>>() {}));
 
-        //  累加每个搜索词的总次数
+// 累加每个搜索词的总次数
         DataStream<Tuple2<String, Long>> countStream = keywordStream
                 .keyBy(t -> t.f0)
                 .sum(1);
 
-
+// 搜索词TOP10处理 - 输出结构化数据
         SingleOutputStreamOperator<String> keyWorksTop10 = countStream
-                .key  @Override
-
-                        // 取前 10
-                        List<Map.Entry<String, LongBy(t -> 0) // 全局排序
-                       public void processElement(Tuple2<String, Long> value, Context ctx, Collector<String> out) {
-                        counts.put(value.f0, value.f1);
-   .process(new KeyedProcessFunction<Integer, Tuple2<String, Long>, String>() {
-
-                    private final Map<String, Long> counts = new HashMap<>();
-
-                  >> top10 = counts.entrySet()
-                                 .sorted((a, b) -> Long.compare(b.getValue(), a.getValue()))
-                                .limit(10)
-                                .collect(Collectors.toList());
-
-                        StringBuilder sb = new StringBuilder();
-                        sb.append("当前TOP10搜索词:\n");
-                        for (Map.Entry<String, Long> e : top10) {
-                            sb.append("搜索词: ").append(e.getKey()).append(", 次数: ").append(e.getValue()).append("\n");
-                        }
-
-                        out.collect(sb.toString());
-                    }
-                });
-        keyWorksTop10.print();*/
-
-
-
-// TODO: 2025/11/3 需求3 登录区域热力（IP转地址）
-
-
-       /* DataStream<Tuple2<String, Long>> regionStream = kafkaStream
-                .flatMap((String json, Collector<Tuple2<String, Long>> out) -> {
-                    JsonNode node = mapper.readTree(json);
-                    if (node.has("log_type") && "login".equals(node.get("log_type").asText())
-                            && node.has("region")) {
-                        String region = node.get("region").asText().trim();
-                        if (!region.isEmpty()) {
-                            out.collect(new Tuple2<>(region, 1L));
-                        }
-                    }
-                })
-                .returns(TypeInformation.of(new TypeHint<Tuple2<String, Long>>() {}));
-
-        // 按地区累加
-        DataStream<Tuple2<String, Long>> regionCountStream = regionStream
-                .keyBy(t -> t.f0)
-                .sum(1);
-
-        // 输出全国热力情况（每条数据更新一次）
-        SingleOutputStreamOperator<String> process = regionCountStream
-                .keyBy(t -> 0) // 全局排序/输出
+                .keyBy(t -> 0) // 全局排序
                 .process(new KeyedProcessFunction<Integer, Tuple2<String, Long>, String>() {
 
                     private final Map<String, Long> counts = new HashMap<>();
@@ -274,19 +389,145 @@ public class HistoryTodayPv {
                     public void processElement(Tuple2<String, Long> value, Context ctx, Collector<String> out) {
                         counts.put(value.f0, value.f1);
 
-                        // 构建输出，可直接用于热力图
-                        StringBuilder sb = new StringBuilder();
-                        sb.append("全国登录热力统计:\n");
-                        for (Map.Entry<String, Long> e : counts.entrySet()) {
-                            sb.append("地区: ").append(e.getKey())
-                                    .append(", 访问量: ").append(e.getValue()).append("\n");
-                        }
+                        // 取前10并构建结构化数据
+                        List<Map<String, Object>> top10List = counts.entrySet()
+                                .stream()
+                                .sorted((a, b) -> Long.compare(b.getValue(), a.getValue()))
+                                .limit(10)
+                                .map(entry -> {
+                                    Map<String, Object> item = new HashMap<>();
+                                    item.put("keyword", entry.getKey());
+                                    item.put("search_count", entry.getValue());
+                                    return item;
+                                })
+                                .collect(Collectors.toList());
 
-                        out.collect(sb.toString());
+                        // 构建结构化JSON
+                        JSONObject result = new JSONObject();
+                        result.put("top10_list", top10List);
+                        result.put("update_time", LocalDateTime.now().format(TIME_FORMATTER));
+                        result.put("total_keywords", counts.size());
+
+                        out.collect(result.toJSONString());
                     }
                 });
 
-        process.print();*/
+        keyWorksTop10.print();
+
+// ==================== TOP10搜索词排名写入 Doris ====================
+        JdbcConnectionOptions keywordTop10JdbcOptions = new JdbcConnectionOptions.JdbcConnectionOptionsBuilder()
+                .withUrl("jdbc:mysql://172.22.78.0:9030/bigdata_realtime_lululemon_user_portrait")
+                .withDriverName("com.mysql.cj.jdbc.Driver")
+                .withUsername("root")
+                .withPassword("123456")
+                .build();
+
+// 创建TOP10搜索词排名的 JDBC Sink
+        SinkFunction<String> keywordTop10Sink = JdbcSink.sink(
+                "INSERT INTO keyword_top10_rankings(keyword, search_count, ranking, update_time) " +
+                        "VALUES (?, ?, ?, ?)",
+                (statement, jsonData) -> {
+                    try {
+                        JSONObject json = JSON.parseObject(jsonData);
+                        JSONArray top10List = json.getJSONArray("top10_list");
+
+                        // 清空旧数据（可选，根据需求决定）
+                        // 或者使用REPLACE INTO语句
+
+                        // 插入TOP10数据
+                        for (int i = 0; i < top10List.size(); i++) {
+                            JSONObject item = top10List.getJSONObject(i);
+                            statement.setString(1, item.getString("keyword"));      // keyword
+                            statement.setLong(2, item.getLong("search_count"));     // search_count
+                            statement.setInt(3, i + 1);                            // ranking
+                            statement.setString(4, json.getString("update_time")); // update_time
+                            statement.addBatch();
+                        }
+                        statement.executeBatch();
+
+                    } catch (Exception e) {
+                        System.err.println("TOP10搜索词排名写入错误: " + jsonData);
+                        e.printStackTrace();
+                    }
+                },
+                keywordTop10JdbcOptions);
+
+// 添加TOP10搜索词排名 Sink
+        keyWorksTop10.addSink(keywordTop10Sink)
+                .name("JdbcSink-KeywordTop10")
+                .setParallelism(1);*/
+
+
+
+// TODO: 2025/11/3 需求3 登录区域热力（IP转地址）
+
+
+
+        /*DataStream<Tuple2<String, Long>> regionStream = kafkaStream
+                .flatMap((String json, Collector<Tuple2<String, Long>> out) -> {
+                    try {
+                        JsonNode node = mapper.readTree(json);
+                        if (node.has("log_type") && "login".equals(node.get("log_type").asText())
+                                && node.has("region")) {
+                            String region = node.get("region").asText().trim();
+
+                            // 添加过滤条件：只保留中国地区
+                            if (!region.isEmpty() && isChinaRegion(region)) {
+                                // 提取省份信息
+                                String province = extractProvince(region);
+                                if (!province.isEmpty()) {
+                                    out.collect(new Tuple2<>(province, 1L));
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        // 忽略解析异常
+                    }
+                })
+                .returns(TypeInformation.of(new TypeHint<Tuple2<String, Long>>() {}));
+
+// 按省份累加
+        DataStream<Tuple2<String, Long>> regionCountStream = regionStream
+                .keyBy(t -> t.f0)
+                .sum(1).map(new MapFunction<Tuple2<String, Long>, Tuple2<String, Long>>() {
+                    @Override
+                    public Tuple2<String, Long> map(Tuple2<String, Long> value) throws Exception {
+                        System.out.println("准备写入Doris: 省份=" + value.f0 + ", 次数=" + value.f1);
+                        return value;
+                    }
+                })
+                .returns(TypeInformation.of(new TypeHint<Tuple2<String, Long>>() {}));
+
+        regionCountStream.print();
+// ==================== 地区统计写入 Doris ====================
+        JdbcConnectionOptions regionJdbcOptions = new JdbcConnectionOptions.JdbcConnectionOptionsBuilder()
+                .withUrl("jdbc:mysql://172.22.78.0:9030/bigdata_realtime_lululemon_user_portrait")
+                .withDriverName("com.mysql.cj.jdbc.Driver")
+                .withUsername("root")
+                .withPassword("123456")
+                .build();
+
+// 创建地区统计的 JDBC Sink
+        SinkFunction<Tuple2<String, Long>> regionSink = JdbcSink.sink(
+                "INSERT INTO region_login_statistics(country, province, login_count, update_time) " +
+                        "VALUES (?, ?, ?, ?)",
+                (statement, tuple) -> {
+                    try {
+                        statement.setString(1, "中国"); // country
+                        statement.setString(2, tuple.f0); // province
+                        statement.setLong(3, tuple.f1); // login_count
+                        statement.setString(4, LocalDateTime.now().format(TIME_FORMATTER)); // update_time
+                    } catch (Exception e) {
+                        System.err.println("地区统计写入错误: " + tuple);
+                        e.printStackTrace();
+                    }
+                },
+                regionJdbcOptions);
+
+// 添加地区统计 Sink
+        regionCountStream.addSink(regionSink)
+                .name("JdbcSink-RegionLogin")
+                .setParallelism(1);*/
 
 
 // TODO: 2025/11/3 需求4 历史天 + 当天 路径分析
@@ -556,7 +797,7 @@ public class HistoryTodayPv {
 // TODO: 2025/11/3 需求5  用户设备统计（iOS & Android）
 
 
-        /*DataStream<Tuple2<String, Long>> devicePlatformStream = kafkaStream
+        DataStream<Tuple2<String, Long>> devicePlatformStream = kafkaStream
                 .flatMap(new FlatMapFunction<String, Tuple2<String, Long>>() {
                     @Override
                     public void flatMap(String json, Collector<Tuple2<String, Long>> out) throws Exception {
@@ -588,30 +829,60 @@ public class HistoryTodayPv {
                             }
 
                             // 统计平台类型
-                            out.collect(new Tuple2<>("平台类型:" + platformType, 1L));
+                            out.collect(new Tuple2<>("platform_type:" + platformType, 1L));
 
-                            // 统计品牌（按平台分类）
-                            if (!brand.isEmpty()) {
-                                out.collect(new Tuple2<>(platformType + ":品牌:" + brand, 1L));
+                            // 统计品牌（按平台分类）- 过滤掉品牌为"其他"的数据
+                            if (!brand.isEmpty() && !"其他".equals(brand)) {
+                                out.collect(new Tuple2<>("brand:" + platformType + ":" + brand, 1L));
                             }
 
-                            // 统计设备型号（按平台分类）
+                            // 统计设备型号（按平台分类）- 过滤掉无法识别品牌的设备
                             if (!device.isEmpty()) {
-                                out.collect(new Tuple2<>(platformType + ":设备:" + device, 1L));
+                                // 从设备型号推断品牌，如果是"其他"则跳过
+                                String inferredBrand = inferBrandFromDevice(device, platformType);
+                                if (!"其他".equals(inferredBrand)) {
+                                    out.collect(new Tuple2<>("device_model:" + platformType + ":" + device, 1L));
+                                }
                             }
 
                             // 统计平台版本（按平台分类）
                             if (!platv.isEmpty()) {
-                                out.collect(new Tuple2<>(platformType + ":平台版本:" + platv, 1L));
+                                out.collect(new Tuple2<>("platform_version:" + platformType + ":" + platv, 1L));
                             }
 
                             // 统计软件版本（按平台分类）
                             if (!softv.isEmpty()) {
-                                out.collect(new Tuple2<>(platformType + ":软件版本:" + softv, 1L));
+                                out.collect(new Tuple2<>("software_version:" + platformType + ":" + softv, 1L));
                             }
 
                         } catch (Exception e) {
                             // 忽略解析异常
+                        }
+                    }
+
+                    // 从设备型号推断品牌的辅助方法
+                    private String inferBrandFromDevice(String device, String platform) {
+                        if (platform.equals("iOS")) {
+                            return "苹果";
+                        }
+
+                        String deviceLower = device.toLowerCase();
+                        if (deviceLower.contains("huawei") || deviceLower.contains("honor")) {
+                            return "华为";
+                        } else if (deviceLower.contains("xiaomi") || deviceLower.contains("mi ") || deviceLower.contains("redmi")) {
+                            return "小米";
+                        } else if (deviceLower.contains("oppo")) {
+                            return "OPPO";
+                        } else if (deviceLower.contains("vivo")) {
+                            return "VIVO";
+                        } else if (deviceLower.contains("samsung")) {
+                            return "三星";
+                        } else if (deviceLower.contains("oneplus")) {
+                            return "一加";
+                        } else if (deviceLower.contains("realme")) {
+                            return "Realme";
+                        } else {
+                            return "其他";
                         }
                     }
                 })
@@ -665,7 +936,6 @@ public class HistoryTodayPv {
                         String currentTime = LocalDateTime.now().format(TIME_FORMATTER);
 
                         sb.append(String.format("[%s] 用户设备平台统计（历史天+当天累计）\n", currentTime));
-                        // 使用循环代替String.repeat()
                         for (int i = 0; i < 70; i++) {
                             sb.append("=");
                         }
@@ -674,13 +944,9 @@ public class HistoryTodayPv {
                         // 平台类型分布
                         appendPlatformTypeReport(sb);
 
-                        // iOS 详细统计
-                        appendPlatformDetailReport(sb, "iOS");
+                        // 详细设备统计（按平台分组）
+                        appendDetailedDeviceReport(sb);
 
-                        // Android 详细统计
-                        appendPlatformDetailReport(sb, "Android");
-
-                        // 再次添加分隔线
                         for (int i = 0; i < 70; i++) {
                             sb.append("=");
                         }
@@ -689,9 +955,9 @@ public class HistoryTodayPv {
                     }
 
                     private void appendPlatformTypeReport(StringBuilder sb) {
-                        long iosCount = devicePlatformStats.containsKey("平台类型:iOS") ? devicePlatformStats.get("平台类型:iOS") : 0L;
-                        long androidCount = devicePlatformStats.containsKey("平台类型:Android") ? devicePlatformStats.get("平台类型:Android") : 0L;
-                        long otherCount = devicePlatformStats.containsKey("平台类型:其他") ? devicePlatformStats.get("平台类型:其他") : 0L;
+                        long iosCount = devicePlatformStats.getOrDefault("platform_type:iOS", 0L);
+                        long androidCount = devicePlatformStats.getOrDefault("platform_type:Android", 0L);
+                        long otherCount = devicePlatformStats.getOrDefault("platform_type:其他", 0L);
 
                         long total = iosCount + androidCount + otherCount;
 
@@ -700,7 +966,6 @@ public class HistoryTodayPv {
                             return;
                         }
 
-                        // 计算百分比
                         double iosPercent = total > 0 ? (iosCount * 100.0 / total) : 0;
                         double androidPercent = total > 0 ? (androidCount * 100.0 / total) : 0;
                         double otherPercent = total > 0 ? (otherCount * 100.0 / total) : 0;
@@ -712,108 +977,141 @@ public class HistoryTodayPv {
                         sb.append("\n");
                     }
 
-                    private void appendPlatformDetailReport(StringBuilder sb, String platform) {
-                        // 品牌统计
-                        List<Map.Entry<String, Long>> brands = new ArrayList<>();
-                        for (Map.Entry<String, Long> entry : devicePlatformStats.entrySet()) {
-                            if (entry.getKey().startsWith(platform + ":品牌:")) {
-                                brands.add(entry);
-                            }
-                        }
-                        // 排序
-                        Collections.sort(brands, new Comparator<Map.Entry<String, Long>>() {
-                            @Override
-                            public int compare(Map.Entry<String, Long> o1, Map.Entry<String, Long> o2) {
-                                return Long.compare(o2.getValue(), o1.getValue());
-                            }
-                        });
+                    private void appendDetailedDeviceReport(StringBuilder sb) {
+                        sb.append("📱 详细设备统计:\n");
 
-                        // 设备统计
-                        List<Map.Entry<String, Long>> devices = new ArrayList<>();
-                        for (Map.Entry<String, Long> entry : devicePlatformStats.entrySet()) {
-                            if (entry.getKey().startsWith(platform + ":设备:")) {
-                                devices.add(entry);
-                            }
-                        }
-                        Collections.sort(devices, new Comparator<Map.Entry<String, Long>>() {
-                            @Override
-                            public int compare(Map.Entry<String, Long> o1, Map.Entry<String, Long> o2) {
-                                return Long.compare(o2.getValue(), o1.getValue());
-                            }
-                        });
+                        // 收集所有品牌和设备型号数据
+                        List<DeviceInfo> allDevices = new ArrayList<>();
 
-                        // 平台版本统计
-                        List<Map.Entry<String, Long>> platformVersions = new ArrayList<>();
-                        for (Map.Entry<String, Long> entry : devicePlatformStats.entrySet()) {
-                            if (entry.getKey().startsWith(platform + ":平台版本:")) {
-                                platformVersions.add(entry);
-                            }
-                        }
-                        Collections.sort(platformVersions, new Comparator<Map.Entry<String, Long>>() {
-                            @Override
-                            public int compare(Map.Entry<String, Long> o1, Map.Entry<String, Long> o2) {
-                                return Long.compare(o2.getValue(), o1.getValue());
-                            }
-                        });
+                        // 处理iOS设备
+                        processPlatformDevices(allDevices, "iOS");
 
-                        // 软件版本统计
-                        List<Map.Entry<String, Long>> softwareVersions = new ArrayList<>();
-                        for (Map.Entry<String, Long> entry : devicePlatformStats.entrySet()) {
-                            if (entry.getKey().startsWith(platform + ":软件版本:")) {
-                                softwareVersions.add(entry);
-                            }
-                        }
-                        Collections.sort(softwareVersions, new Comparator<Map.Entry<String, Long>>() {
-                            @Override
-                            public int compare(Map.Entry<String, Long> o1, Map.Entry<String, Long> o2) {
-                                return Long.compare(o2.getValue(), o1.getValue());
-                            }
-                        });
+                        // 处理Android设备
+                        processPlatformDevices(allDevices, "Android");
 
-                        String platformIcon = platform.equals("iOS") ? "🍎" : "🤖";
-                        sb.append(platformIcon).append(" ").append(platform).append(" 设备详情:\n");
+                        // 处理其他平台设备
+                        processPlatformDevices(allDevices, "其他");
 
-                        if (!brands.isEmpty()) {
-                            sb.append("  品牌分布:\n");
-                            for (int i = 0; i < Math.min(brands.size(), 8); i++) {
-                                Map.Entry<String, Long> entry = brands.get(i);
-                                String brand = entry.getKey().split(":品牌:")[1];
-                                sb.append(String.format("    %-12s : %6d次\n", brand, entry.getValue()));
-                            }
+                        // 按次数排序
+                        allDevices.sort((a, b) -> Long.compare(b.count, a.count));
+
+                        // 输出所有设备信息
+                        for (DeviceInfo device : allDevices) {
+                            sb.append(String.format("  系统：%-8s, 品牌：%-10s, 型号：%-20s, 次数：%d\n",
+                                    device.platform, device.brand, device.model, device.count));
                         }
 
-                        if (!devices.isEmpty()) {
-                            sb.append("  热门设备:\n");
-                            for (int i = 0; i < Math.min(devices.size(), 5); i++) {
-                                Map.Entry<String, Long> entry = devices.get(i);
-                                String device = entry.getKey().split(":设备:")[1];
-                                sb.append(String.format("    %-15s : %6d次\n", device, entry.getValue()));
-                            }
-                        }
-
-                        if (!platformVersions.isEmpty()) {
-                            sb.append("  平台版本:\n");
-                            for (int i = 0; i < Math.min(platformVersions.size(), 5); i++) {
-                                Map.Entry<String, Long> entry = platformVersions.get(i);
-                                String version = entry.getKey().split(":平台版本:")[1];
-                                sb.append(String.format("    %-10s : %6d次\n", version, entry.getValue()));
-                            }
-                        }
-
-                        if (!softwareVersions.isEmpty()) {
-                            sb.append("  软件版本:\n");
-                            for (int i = 0; i < Math.min(softwareVersions.size(), 5); i++) {
-                                Map.Entry<String, Long> entry = softwareVersions.get(i);
-                                String version = entry.getKey().split(":软件版本:")[1];
-                                sb.append(String.format("    %-10s : %6d次\n", version, entry.getValue()));
-                            }
+                        if (allDevices.isEmpty()) {
+                            sb.append("  暂无详细设备数据\n");
                         }
                         sb.append("\n");
+                    }
+
+                    private void processPlatformDevices(List<DeviceInfo> allDevices, String platform) {
+                        // 处理品牌数据
+                        for (Map.Entry<String, Long> entry : devicePlatformStats.entrySet()) {
+                            if (entry.getKey().startsWith("brand:" + platform + ":")) {
+                                String brand = entry.getKey().split(":" + platform + ":")[1];
+                                allDevices.add(new DeviceInfo(platform, brand, "未知", entry.getValue()));
+                            }
+                        }
+
+                        // 处理设备型号数据
+                        for (Map.Entry<String, Long> entry : devicePlatformStats.entrySet()) {
+                            if (entry.getKey().startsWith("device_model:" + platform + ":")) {
+                                String model = entry.getKey().split(":" + platform + ":")[1];
+                                // 从型号推断品牌
+                                String brand = inferBrandFromModel(model, platform);
+                                allDevices.add(new DeviceInfo(platform, brand, model, entry.getValue()));
+                            }
+                        }
+                    }
+
+                    private String inferBrandFromModel(String model, String platform) {
+                        if (platform.equals("iOS")) {
+                            return "苹果";
+                        }
+
+                        String modelLower = model.toLowerCase();
+                        if (modelLower.contains("huawei") || modelLower.contains("honor")) {
+                            return "华为";
+                        } else if (modelLower.contains("xiaomi") || modelLower.contains("mi ") || modelLower.contains("redmi")) {
+                            return "小米";
+                        } else if (modelLower.contains("oppo")) {
+                            return "OPPO";
+                        } else if (modelLower.contains("vivo")) {
+                            return "VIVO";
+                        } else if (modelLower.contains("samsung")) {
+                            return "三星";
+                        } else if (modelLower.contains("oneplus")) {
+                            return "一加";
+                        } else if (modelLower.contains("realme")) {
+                            return "Realme";
+                        } else {
+                            return "其他";
+                        }
+                    }
+
+                    // 设备信息辅助类
+                    class DeviceInfo {
+                        String platform;
+                        String brand;
+                        String model;
+                        long count;
+
+                        DeviceInfo(String platform, String brand, String model, long count) {
+                            this.platform = platform;
+                            this.brand = brand;
+                            this.model = model;
+                            this.count = count;
+                        }
                     }
                 })
                 .name("DevicePlatformAnalysisReport");
 
-        devicePlatformAnalysis.print("用户设备平台统计");*/
+        devicePlatformAnalysis.print("用户设备平台统计");
+
+        JdbcConnectionOptions deviceJdbcOptions = new JdbcConnectionOptions.JdbcConnectionOptionsBuilder()
+                .withUrl("jdbc:mysql://172.22.78.0:9030/bigdata_realtime_lululemon_user_portrait")
+                .withDriverName("com.mysql.cj.jdbc.Driver")
+                .withUsername("root")
+                .withPassword("123456")
+                .build();
+
+// 创建设备统计的 JDBC Sink
+/*        SinkFunction<Tuple2<String, Long>> deviceSink = JdbcSink.sink(
+                "INSERT INTO device_platform_stats(stat_type, stat_key, stat_value, platform_type, update_time) " +
+                        "VALUES (?, ?, ?, ?, ?)",
+                (statement, tuple) -> {
+                    try {
+                        String key = tuple.f0;
+                        Long count = tuple.f1;
+                        String updateTime = LocalDateTime.now().format(TIME_FORMATTER);
+
+                        // 解析统计类型和平台类型
+                        String[] parts = key.split(":");
+                        String statType = parts[0];
+                        String platformType = parts.length > 1 ? parts[1] : "";
+                        String statKey = parts.length > 2 ? parts[2] : platformType;
+
+                        statement.setString(1, statType);
+                        statement.setString(2, statKey);
+                        statement.setLong(3, count);
+                        statement.setString(4, platformType);
+                        statement.setString(5, updateTime);
+
+                    } catch (Exception e) {
+                        System.err.println("设备统计写入错误: " + tuple);
+                        System.err.println("错误信息: " + e.getMessage());
+                        e.printStackTrace();
+                    }
+                },
+                deviceJdbcOptions);
+
+// 添加设备统计 Sink
+        devicePlatformCountStream.addSink(deviceSink)
+                .name("JdbcSink-DeviceStats")
+                .setParallelism(1);*/
 
 
 
@@ -892,15 +1190,13 @@ public class HistoryTodayPv {
                     private String getTimePeriod(LocalDateTime dateTime) {
                         int hour = dateTime.getHour();
                         if (hour >= 6 && hour < 12) {
-                            return "morning";
-                        } else if (hour >= 12 && hour < 14) {
-                            return "noon";
-                        } else if (hour >= 14 && hour < 18) {
-                            return "afternoon";
+                            return "6:00-12:00";
+                        } else if (hour >= 12 && hour < 18) {
+                            return "12:00-18:00";
                         } else if (hour >= 18 && hour < 22) {
-                            return "evening";
+                            return "18:00-22:00";
                         } else {
-                            return "night";
+                            return "22:00-6:00";
                         }
                     }
                 })
@@ -908,6 +1204,44 @@ public class HistoryTodayPv {
 
         // 打印用户画像结果
         userProfileStream.print("用户画像");*/
+
+
+
+        /*JdbcConnectionOptions jdbcOptions = new JdbcConnectionOptions.JdbcConnectionOptionsBuilder()
+                .withUrl("jdbc:mysql://172.22.78.0:9030/bigdata_realtime_lululemon_user_portrait")
+                .withDriverName("com.mysql.cj.jdbc.Driver")
+                .withUsername("root")
+                .withPassword("123456")
+                .build();
+
+// 创建 JDBC Sink - 使用 Doris 支持的 INSERT 语法
+        SinkFunction<String> jdbcSink = JdbcSink.sink(
+                "INSERT INTO user_profile(user_id, login_dates, login_days_count, login_periods, has_purchase, has_search, has_view, first_login_date, last_login_date, update_time) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (statement, jsonStr) -> {
+                    // 解析 JSON 并设置参数
+                    JSONObject json = JSON.parseObject(jsonStr);
+                    statement.setString(1, json.getString("user_id"));
+                    statement.setString(2, json.getString("login_dates"));
+                    statement.setInt(3, json.getIntValue("login_days_count"));
+                    statement.setString(4, json.getString("login_periods"));
+                    statement.setString(5, json.getString("has_purchase"));
+                    statement.setString(6, json.getString("has_search"));
+                    statement.setString(7, json.getString("has_view"));
+                    statement.setString(8, json.getString("first_login_date"));
+                    statement.setString(9, json.getString("last_login_date"));
+                    statement.setString(10, json.getString("update_time"));
+                },
+                jdbcOptions);
+
+// 添加 Sink 到数据流
+        userProfileStream.addSink(jdbcSink)
+                .name("JdbcSink-UserProfile");*/
+
+
+
+
+
 
         System.out.println("🚀 Flink 作业启动成功！开始统计......");
         env.execute("历史天+当天 综合统计");
